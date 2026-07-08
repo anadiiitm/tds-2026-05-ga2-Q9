@@ -64,7 +64,8 @@ async def rate_limit(request, call_next):
                 "Retry-After": str(retry),
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "*",
-                "Access-Control-Allow-Headers": "*"
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Expose-Headers": "Retry-After"
             }
         )
 
