@@ -44,31 +44,30 @@ client_requests = defaultdict(deque)
 
 @app.middleware("http")
 async def rate_limit(request, call_next):
-     if request.method == "OPTIONS":
+    if request.method == "OPTIONS":
         return await call_next(request)
+
     client = request.headers.get("X-Client-Id", "anonymous")
 
     now = time.time()
     bucket = client_requests[client]
 
-    # Remove expired timestamps
     while bucket and now - bucket[0] > WINDOW:
         bucket.popleft()
 
     if len(bucket) >= RATE_LIMIT:
-    retry = max(1, int(WINDOW - (now - bucket[0])))
+        retry = max(1, int(WINDOW - (now - bucket[0])))
 
-    return Response(
-        status_code=429,
-        headers={
-            "Retry-After": str(retry)
-        }
-    )
+        return Response(
+            status_code=429,
+            headers={
+                "Retry-After": str(retry)
+            }
+        )
 
-bucket.append(now)
+    bucket.append(now)
 
-return await call_next(request)
-
+    return await call_next(request)
 
 # -----------------------------------
 # Idempotent POST /orders
