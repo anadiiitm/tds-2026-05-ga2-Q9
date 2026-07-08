@@ -1,18 +1,13 @@
 import time
 import uuid
 from collections import defaultdict, deque
-from typing import Optional
 
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 app = FastAPI()
 
-# -------------------------
-# CORS
-# -------------------------
+# Allow browser-based grader
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,7 +21,7 @@ RATE_LIMIT = 16
 WINDOW = 10  # seconds
 
 # -------------------------
-# Fixed catalog
+# Fixed catalog (IDs 1..42)
 # -------------------------
 catalog = [
     {
@@ -37,88 +32,73 @@ catalog = [
 ]
 
 # -------------------------
-# Stores
+# Idempotency storage
 # -------------------------
 idempotency_store = {}
 
+# -------------------------
+# Rate limiting storage
+# -------------------------
 client_requests = defaultdict(deque)
 
 
-# -------------------------
-# Request body
-# -------------------------
-class OrderRequest(BaseModel):
-    item: Optional[str] = None
-
-
-# -------------------------
-# Rate Limiting Middleware
-# -------------------------
 @app.middleware("http")
-async def rate_limit(request: Request, call_next):
-
-    # Never rate-limit CORS preflight
+async def rate_limit(request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
 
     client = request.headers.get("X-Client-Id", "anonymous")
 
     now = time.time()
-
     bucket = client_requests[client]
 
-    # Remove expired timestamps
     while bucket and now - bucket[0] > WINDOW:
         bucket.popleft()
 
     if len(bucket) >= RATE_LIMIT:
         retry = max(1, int(WINDOW - (now - bucket[0])))
 
-        return JSONResponse(
+        return Response(
             status_code=429,
-            content={
-                "detail": "Rate limit exceeded"
-            },
             headers={
-                "Retry-After": str(retry)
-            },
+                "Retry-After": str(retry),
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "*",
+                "Access-Control-Allow-Headers": "*"
+            }
         )
 
     bucket.append(now)
 
     return await call_next(request)
 
-
-# -------------------------
+# -----------------------------------
 # Idempotent POST /orders
-# -------------------------
+# -----------------------------------
+
 @app.post("/orders", status_code=201)
 def create_order(
-    order: OrderRequest,
-    idempotency_key: str = Header(alias="Idempotency-Key"),
+    response: Response,
+    idempotency_key: str = Header(alias="Idempotency-Key")
 ):
-
     if idempotency_key in idempotency_store:
         return idempotency_store[idempotency_key]
 
-    created_order = {
-        "id": str(uuid.uuid4()),
-        "item": order.item,
+    order = {
+        "id": str(uuid.uuid4())
     }
 
-    idempotency_store[idempotency_key] = created_order
+    idempotency_store[idempotency_key] = order
 
-    return created_order
+    return order
 
 
-# -------------------------
-# Cursor Pagination
-# -------------------------
+# -----------------------------------
+# Cursor pagination
+# -----------------------------------
+
 @app.get("/orders")
-def list_orders(
-    limit: int = 10,
-    cursor: Optional[str] = None,
-):
+def list_orders(limit: int = 10, cursor: str | None = None):
 
     start = int(cursor) if cursor else 0
 
@@ -126,10 +106,10 @@ def list_orders(
 
     next_cursor = None
 
-    if start + limit < TOTAL_ORDERS:
+    if start + limit < len(catalog):
         next_cursor = str(start + limit)
 
     return {
         "items": items,
-        "next_cursor": next_cursor,
+        "next_cursor": next_cursor
     }
