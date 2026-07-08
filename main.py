@@ -11,6 +11,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -43,6 +44,8 @@ client_requests = defaultdict(deque)
 
 @app.middleware("http")
 async def rate_limit(request, call_next):
+     if request.method == "OPTIONS":
+        return await call_next(request)
     client = request.headers.get("X-Client-Id", "anonymous")
 
     now = time.time()
