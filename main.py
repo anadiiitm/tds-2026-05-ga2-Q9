@@ -56,18 +56,18 @@ async def rate_limit(request, call_next):
         bucket.popleft()
 
     if len(bucket) >= RATE_LIMIT:
-        retry = max(1, int(WINDOW - (now - bucket[0])))
+    retry = max(1, int(WINDOW - (now - bucket[0])))
 
-        return Response(
-            status_code=429,
-            headers={
-                "Retry-After": str(retry)
-            }
-        )
+    return Response(
+        status_code=429,
+        headers={
+            "Retry-After": str(retry)
+        }
+    )
 
-    bucket.append(now)
+bucket.append(now)
 
-    return await call_next(request)
+return await call_next(request)
 
 
 # -----------------------------------
